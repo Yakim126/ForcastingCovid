@@ -13,7 +13,7 @@ csv_path = 'CovidUaData.csv'
 
 df = pd.read_csv(csv_path)
 
-TRAIN_SPLIT = 554
+TRAIN_SPLIT = 200
 
 def univariate_data(dataset, start_index, end_index, history_size, target_size):
   data = []
@@ -43,7 +43,7 @@ uni_train_std = uni_data[:TRAIN_SPLIT].std()
 uni_data = (uni_data-uni_train_mean)/uni_train_std
 
 
-univariate_past_history = 550
+univariate_past_history = 100
 univariate_future_target = 0
 
 x_train_uni, y_train_uni = univariate_data(uni_data, 0, TRAIN_SPLIT,
@@ -86,7 +86,7 @@ def show_plot(plot_data, delta, title):
 
 ##################################
 
-BATCH_SIZE = 256
+BATCH_SIZE = 128
 BUFFER_SIZE = 10000
 
 train_univariate = tf.data.Dataset.from_tensor_slices((x_train_uni, y_train_uni))
@@ -99,26 +99,27 @@ val_univariate = val_univariate.batch(BATCH_SIZE).repeat()
 simple_lstm_model = tf.keras.models.Sequential([
     tf.keras.layers.LSTM(8, input_shape=x_train_uni.shape[-2:]),
     tf.keras.layers.Dense(1)
+
 ])
 
 simple_lstm_model.compile(optimizer='adam', loss='mae')
 
 ################
 
-for x, y in val_univariate.take(1):
+for x, y in val_univariate.take(0):
     print(simple_lstm_model.predict(x).shape)
 
 ################
 
-EVALUATION_INTERVAL = 20
+EVALUATION_INTERVAL = 200
 EPOCHS = 10
 
 simple_lstm_model.fit(train_univariate, epochs=EPOCHS,
                       steps_per_epoch=EVALUATION_INTERVAL,
                       validation_data=val_univariate, validation_steps=50)
 
-for x, y in val_univariate.take(3):
+for x, y in val_univariate.take(1):
   plot = show_plot([x[0].numpy(), y[0].numpy(),
                     simple_lstm_model.predict(x)[0]], 0, 'Simple LSTM model')
-  plt.savefig('plotLSTM' + x + '.png')
+
 
