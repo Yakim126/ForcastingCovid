@@ -16,9 +16,8 @@ df = pd.read_csv(csv_path)
 TRAIN_SPLIT = 200
 
 
-def univariate_data(dataset, start_index, end_index, history_size, target_size):
+def univariate_datax(dataset, start_index, end_index, history_size, target_size):
     data = []
-    labels = []
 
     start_index = start_index + history_size
     if end_index is None:
@@ -28,11 +27,24 @@ def univariate_data(dataset, start_index, end_index, history_size, target_size):
         indices = range(i - history_size, i)
         # Reshape data from (history_size,) to (history_size, 1)
         data.append(np.reshape(dataset[indices], (history_size, 1)))
+
+    return np.array(data)
+
+
+def univariate_datay(dataset, start_index, end_index, history_size, target_size):
+    labels = []
+
+    start_index = start_index + history_size
+    if end_index is None:
+        end_index = len(dataset) - target_size
+
+    for i in range(start_index, end_index):
+        indices = range(i - history_size, i)
+        # Reshape data from (history_size,) to (history_size, 1)
         labels.append(dataset[i + target_size])
-    return np.array(data), np.array(labels)
 
+    return np.array(labels)
 
-tf.random.set_seed(13)
 
 uni_data = df['New_cases']
 uni_data.index = df['Date_reported']
@@ -44,16 +56,23 @@ uni_train_std = uni_data[:TRAIN_SPLIT].std()
 
 uni_data = (uni_data - uni_train_mean) / uni_train_std
 
-univariate_past_history = 193
-univariate_future_target = 1
+univariate_past_history = 20
+univariate_future_target = 7
 STEP = 1
 
-x_train_uni, y_train_uni = univariate_data(uni_data, 0, TRAIN_SPLIT,
-                                           univariate_past_history,
-                                           univariate_future_target)
-x_val_uni, y_val_uni = univariate_data(uni_data, TRAIN_SPLIT, None,
-                                       univariate_past_history,
-                                       univariate_future_target)
+x_train_uni = univariate_datax(uni_data, 0, TRAIN_SPLIT,
+                               univariate_past_history,
+                               univariate_future_target)
+y_train_uni = univariate_datay(uni_data, 0, TRAIN_SPLIT,
+                               univariate_past_history,
+                               univariate_future_target)
+x_val_uni = univariate_datax(uni_data, TRAIN_SPLIT, None,
+                             univariate_past_history,
+                             univariate_future_target)
+y_val_uni = univariate_datay(uni_data, TRAIN_SPLIT, None,
+                             univariate_past_history,
+                             univariate_future_target)
+
 
 print('Single window of past history : {}'.format(x_train_uni[0].shape))
 print('\n Target temperature to predict : {}'.format(y_train_uni[0].shape))
@@ -85,12 +104,12 @@ def show_plot(plot_data, delta, title):
     return plt.savefig('plot.png')
 
 
-#show_plot([x_train_uni[0], y_train_uni[0]], 0, 'Sample Example')
+# show_plot([x_train_uni[0], y_train_uni[0]], 0, 'Sample Example')
 
 ##################################
 
-BATCH_SIZE = 128
-BUFFER_SIZE = 10000
+BATCH_SIZE = 256
+BUFFER_SIZE = 700
 
 train_univariate = tf.data.Dataset.from_tensor_slices((x_train_uni, y_train_uni))
 train_univariate = train_univariate.cache().shuffle(BUFFER_SIZE).batch(BATCH_SIZE).repeat()
@@ -100,22 +119,8 @@ val_univariate = val_univariate.batch(BATCH_SIZE).repeat()
 
 print(val_univariate.take(1))
 
-EVALUATION_INTERVAL = 20
+EVALUATION_INTERVAL = 1
 EPOCHS = 1
-
-simple_lstm_model = tf.keras.models.Sequential()
-simple_lstm_model.add(tf.keras.layers.LSTM(32,
-                                           return_sequences=True,
-                                           input_shape=x_train_uni.shape[-2:]))
-simple_lstm_model.add(tf.keras.layers.LSTM(16, activation='relu'))
-simple_lstm_model.add(tf.keras.layers.Dense(7))
-
-simple_lstm_model.compile(optimizer=tf.keras.optimizers.RMSprop(clipvalue=1.0), loss='mae')
-
-multi_step_history = simple_lstm_model.fit(train_univariate, epochs=EPOCHS,
-                                           steps_per_epoch=EVALUATION_INTERVAL,
-                                           validation_data=val_univariate,
-                                           validation_steps=50)
 
 
 def multi_step_plot(history, true_future, prediction):
@@ -133,5 +138,22 @@ def multi_step_plot(history, true_future, prediction):
     plt.show()
 
 
+multi_step_model = tf.keras.models.Sequential()
+multi_step_model.add(tf.keras.layers.LSTM(32,
+                                          return_sequences=True,
+                                          input_shape=x_train_uni.shape[-2:]))
+multi_step_model.add(tf.keras.layers.LSTM(16, activation='relu'))
+multi_step_model.add(tf.keras.layers.Dense(7))
+
+multi_step_model.compile(optimizer=tf.keras.optimizers.RMSprop(clipvalue=1.0), loss='mae')
+
 for x, y in val_univariate.take(1):
-    multi_step_plot(x[0], y[0], np.array([0]))
+    print(multi_step_model.predict(x).shape)
+
+multi_step_history = multi_step_model.fit(train_univariate, epochs=EPOCHS,
+                                          steps_per_epoch=EVALUATION_INTERVAL,
+                                          validation_data=val_univariate,
+                                          validation_steps=50)
+
+for x, y in val_univariate.take(3):
+    multi_step_plot(x[0], y[0], multi_step_model.predict(x)[0])
